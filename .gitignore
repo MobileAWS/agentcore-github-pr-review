@@ -1,0 +1,22 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# AWS credentials
+.aws/
+
+# AgentCore generated files
+.bedrock_agentcore/
+.bedrock_agentcore.yaml
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
