@@ -21,18 +21,18 @@ REGION_ID = os.getenv("REGION_ID")
 
 app = BedrockAgentCoreApp()
 
-print("AWS_ACCESS_KEY_ID present:", os.getenv("AWS_ACCESS_KEY_ID"))
-print("AWS_SECRET_ACCESS_KEY present:", os.getenv("AWS_SECRET_ACCESS_KEY"))
-print("MEMORY_ID present:", MEMORY_ID)
-print("MODEL_ID present:", MODEL_ID)
-print("REGION_ID present:", REGION_ID)
-
-boto3.Session()
-
 @app.entrypoint
-def invoke(payload, context):
+def review_pr(payload, context):
     """
-    Multi-purpose agent that can handle both general queries and PR reviews
+    Analyze a GitHub PR and provide review feedback
+    Expected payload: {
+        "pr_data": {
+            "title": "PR title",
+            "description": "PR description", 
+            "files": [{"filename": "file.py", "patch": "diff content"}],
+            "author": "username"
+        }
+    }
     """
     
     session_id = getattr(context, "session_id", None)
@@ -42,7 +42,7 @@ def invoke(payload, context):
         memory_config = AgentCoreMemoryConfig(
             memory_id=MEMORY_ID,
             session_id=session_id or 'default',
-            actor_id="assistant",
+            actor_id="pr_reviewer",
             region=REGION_ID,
             retrieval_config={
                 "/reviews/patterns": RetrievalConfig(top_k=5, relevance_score=0.7),
@@ -57,9 +57,11 @@ def invoke(payload, context):
         auto_create=True
     )
     
-    # Check if this is a PR review request
-    if payload.get("pr_data"):
-        system_prompt = """You are an expert code reviewer for a software development team. 
+    agent = Agent(
+        model=MODEL_ID,
+        tools=[code_interpreter.code_interpreter],
+        session_manager=session_manager,
+        system_prompt="""You are an expert code reviewer for a software development team. 
 
 Your job is to analyze pull requests and provide constructive feedback on:
 - Security vulnerabilities and potential exploits
@@ -91,52 +93,32 @@ Format your response as:
 - Code snippets (if helpful)
 
 Be thorough but constructive. Focus on helping the developer improve."""
-        
-        pr_data = payload.get("pr_data", {})
-        
-        # Format PR data for analysis
-        pr_context = f"""
+    )
+    
+    pr_data = payload.get("pr_data", {})
+    
+    # Format PR data for analysis
+    pr_context = f"""
 PR Title: {pr_data.get('title', 'N/A')}
 Author: {pr_data.get('author', 'N/A')}
 Description: {pr_data.get('description', 'N/A')}
 
 Files Changed ({len(pr_data.get('files', []))} files):
 """
-        
-        for file_data in pr_data.get('files', []):
-            pr_context += f"\n--- {file_data.get('filename', 'unknown')} ---\n"
-            pr_context += file_data.get('patch', 'No diff available')
-            pr_context += "\n"
-        
-        prompt = f"Please review this pull request:\n\n{pr_context}"
-        
-    else:
-        # General assistant mode
-        system_prompt = """You are a helpful assistant with code execution capabilities. Use tools when appropriate.
-        Response format when using code:
-        1. Brief explanation of your approach
-        2. Code block showing the executed code
-        3. Results and analysis
-        """
-        prompt = payload.get("prompt", "")
     
-    agent = Agent(
-        model=MODEL_ID,
-        tools=[code_interpreter.code_interpreter],
-        session_manager=session_manager,
-        system_prompt=system_prompt
-    )
+    for file_data in pr_data.get('files', []):
+        pr_context += f"\n--- {file_data.get('filename', 'unknown')} ---\n"
+        pr_context += file_data.get('patch', 'No diff available')
+        pr_context += "\n"
+    
+    prompt = f"Please review this pull request:\n\n{pr_context}"
     
     results = agent(prompt)
-    
-    if payload.get("pr_data"):
-        return {
-            "review": results.message.get('content', [{}])[0].get('text', str(results)),
-            "pr_title": payload.get("pr_data", {}).get('title'),
-            "files_reviewed": len(payload.get("pr_data", {}).get('files', []))
-        }
-    else:
-        return {"response": results.message.get('content', [{}])[0].get('text', str(results))}
+    return {
+        "review": results.message.get('content', [{}])[0].get('text', str(results)),
+        "pr_title": pr_data.get('title'),
+        "files_reviewed": len(pr_data.get('files', []))
+    }
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
     app.run()

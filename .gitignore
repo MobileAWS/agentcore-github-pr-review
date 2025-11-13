@@ -1,11 +1,14 @@
 # Environment variables
 .env
+.env.local
+.env.production
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 .venv/
+venv/
 
 # AWS credentials
 .aws/
@@ -20,3 +23,6 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Logs
+*.log
